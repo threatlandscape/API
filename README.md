@@ -48,7 +48,7 @@ API keys are issued per account. Keep your key secret — do not include it in c
 Retrieve the 10 most recent threat bundles:
 
 ```bash
-curl 'https://api.threatlandscape.io/rest/v1/stix_bundles?select=bundle_id,source_type,threat_actors,malware_names,created_at&order=created_at.desc&limit=10' \
+curl 'https://api.threatlandscape.io/rest/v1/stix_bundles?select=bundle_id,source_type,threat_actors,malware_names,api_created_at&order=api_created_at.desc&limit=10' \
   -H "apikey: YOUR_THREATLANDSCAPE_API_KEY"
 ```
 
@@ -85,11 +85,14 @@ Filter parameters are applied as query string key/value pairs — see [Filtering
 | Field                   | Type                    | Description                                                                                          |
 |-------------------------|-------------------------|------------------------------------------------------------------------------------------------------|
 | `id`                    | `uuid`                  | Internal record identifier (auto-generated).                                                         |
+| `seq_id`                | `bigint`                | Auto-incrementing sequence number. Stable and monotonic — ideal for offset-based pagination.         |
 | `bundle_id`             | `text`                  | STIX 2.1 bundle ID (e.g. `bundle--<uuid>`). Unique key; used for deduplication.                     |
 | `source_type`           | `text`                  | `osint` — open-source / public feed, or `darknet` — darknet / underground source.                   |
-| `created_at`            | `timestamptz`           | Timestamp when the record was ingested into the API.                                                 |
-| `earliest_ts`           | `timestamptz`           | Earliest `created` timestamp of any STIX object inside the bundle.                                  |
-| `latest_ts`             | `timestamptz`           | Latest `modified` timestamp of any STIX object inside the bundle.                                   |
+| `api_created_at`        | `timestamptz`           | Timestamp when the record was ingested into the API.                                                 |
+| `stix_created_at`       | `timestamptz`           | `created` timestamp of the primary STIX `report` object in the bundle.                              |
+| `stix_published_at`     | `timestamptz`           | `published` timestamp of the primary STIX `report` object in the bundle.                            |
+| `stix_earliest_at`      | `timestamptz`           | Earliest `created` timestamp of any STIX object inside the bundle.                                  |
+| `stix_latest_at`        | `timestamptz`           | Latest `modified` timestamp of any STIX object inside the bundle.                                   |
 | `stix_bundle`           | `jsonb`                 | Full STIX 2.1 bundle payload. Conforms to the [STIX 2.1 specification](https://docs.oasis-open.org/cti/stix/v2.1/stix-v2.1.html). |
 | `title`                 | `text`                  | Title of the threat report (from extraction or report name).                                        |
 | `summary`               | `text`                  | Summary text of the threat report (from extraction or report description).                          |
@@ -126,10 +129,10 @@ The API uses [PostgREST](https://postgrest.org/en/stable/api.html#horizontal-fil
 |----------|---------------------------------|-------------------------------------------------|
 | `eq`     | Equal to                        | `source_type=eq.darknet`                        |
 | `neq`    | Not equal to                    | `source_type=neq.osint`                         |
-| `gt`     | Greater than                    | `latest_ts=gt.2025-01-01T00:00:00Z`             |
-| `gte`    | Greater than or equal to        | `latest_ts=gte.2025-01-01T00:00:00Z`            |
-| `lt`     | Less than                       | `earliest_ts=lt.2024-01-01T00:00:00Z`           |
-| `lte`    | Less than or equal to           | `earliest_ts=lte.2024-12-31T23:59:59Z`          |
+| `gt`     | Greater than                    | `stix_latest_at=gt.2025-01-01T00:00:00Z`             |
+| `gte`    | Greater than or equal to        | `stix_latest_at=gte.2025-01-01T00:00:00Z`            |
+| `lt`     | Less than                       | `stix_earliest_at=lt.2024-01-01T00:00:00Z`           |
+| `lte`    | Less than or equal to           | `stix_earliest_at=lte.2024-12-31T23:59:59Z`          |
 | `like`   | Pattern match (case-sensitive)  | `bundle_id=like.bundle--*`                      |
 | `ilike`  | Pattern match (case-insensitive)| `bundle_id=ilike.bundle--*`                     |
 | `is`     | Is null / not null              | `threat_actors=is.null`                         |
@@ -143,7 +146,7 @@ curl 'https://api.threatlandscape.io/rest/v1/stix_bundles?select=bundle_id,sourc
 
 ```bash
 # Bundles updated after 1 Jan 2025
-curl 'https://api.threatlandscape.io/rest/v1/stix_bundles?select=bundle_id,latest_ts,malware_names&latest_ts=gte.2025-01-01T00:00:00Z' \
+curl 'https://api.threatlandscape.io/rest/v1/stix_bundles?select=bundle_id,stix_latest_at,malware_names&stix_latest_at=gte.2025-01-01T00:00:00Z' \
   -H "apikey: YOUR_THREATLANDSCAPE_API_KEY"
 ```
 
@@ -212,14 +215,16 @@ curl --get 'https://api.threatlandscape.io/rest/v1/stix_bundles' \
 
 Use the `Range` header to page through results. The format is `start-end` (zero-indexed, both inclusive).
 
+For stable offset-based pagination, order by `seq_id` — a monotonically increasing integer that is unaffected by concurrent inserts and safe to use as a cursor.
+
 ```bash
 # First page (records 0–9)
-curl 'https://api.threatlandscape.io/rest/v1/stix_bundles?select=bundle_id,created_at&order=created_at.desc' \
+curl 'https://api.threatlandscape.io/rest/v1/stix_bundles?select=bundle_id,seq_id,api_created_at&order=seq_id.desc' \
   -H "apikey: YOUR_THREATLANDSCAPE_API_KEY" \
   -H "Range: 0-9"
 
 # Second page (records 10–19)
-curl 'https://api.threatlandscape.io/rest/v1/stix_bundles?select=bundle_id,created_at&order=created_at.desc' \
+curl 'https://api.threatlandscape.io/rest/v1/stix_bundles?select=bundle_id,seq_id,api_created_at&order=seq_id.desc' \
   -H "apikey: YOUR_THREATLANDSCAPE_API_KEY" \
   -H "Range: 10-19"
 ```
@@ -227,7 +232,7 @@ curl 'https://api.threatlandscape.io/rest/v1/stix_bundles?select=bundle_id,creat
 Alternatively, use `limit` and `offset` query parameters:
 
 ```bash
-curl 'https://api.threatlandscape.io/rest/v1/stix_bundles?select=bundle_id,created_at&order=created_at.desc&limit=10&offset=20' \
+curl 'https://api.threatlandscape.io/rest/v1/stix_bundles?select=bundle_id,seq_id,api_created_at&order=seq_id.desc&limit=10&offset=20' \
   -H "apikey: YOUR_THREATLANDSCAPE_API_KEY"
 ```
 
@@ -239,7 +244,7 @@ Append `order=<column>.<direction>` to any request. Direction is `asc` or `desc`
 
 ```bash
 # Most recently modified bundles first
-curl 'https://api.threatlandscape.io/rest/v1/stix_bundles?select=bundle_id,latest_ts,source_type&order=latest_ts.desc' \
+curl 'https://api.threatlandscape.io/rest/v1/stix_bundles?select=bundle_id,stix_latest_at,source_type&order=stix_latest_at.desc' \
   -H "apikey: YOUR_THREATLANDSCAPE_API_KEY"
 ```
 
@@ -271,9 +276,9 @@ curl 'https://api.threatlandscape.io/rest/v1/stix_bundles?select=*&bundle_id=eq.
 ```bash
 curl --get 'https://api.threatlandscape.io/rest/v1/stix_bundles' \
   -H "apikey: YOUR_THREATLANDSCAPE_API_KEY" \
-  -d "select=bundle_id,threat_actors,malware_names,campaigns,countries_target,victims,latest_ts" \
+  -d "select=bundle_id,threat_actors,malware_names,campaigns,countries_target,victims,stix_latest_at" \
   -d "threat_actors=cs.{Lazarus Group}" \
-  -d "order=latest_ts.desc"
+  -d "order=stix_latest_at.desc"
 ```
 
 ### Vulnerability intelligence — bundles referencing a CVE
@@ -290,7 +295,7 @@ curl --get 'https://api.threatlandscape.io/rest/v1/stix_bundles' \
 ```bash
 curl --get 'https://api.threatlandscape.io/rest/v1/stix_bundles' \
   -H "apikey: YOUR_THREATLANDSCAPE_API_KEY" \
-  -d "select=bundle_id,indicators_ipv4,threat_actors,latest_ts" \
+  -d "select=bundle_id,indicators_ipv4,threat_actors,stix_latest_at" \
   -d "indicators_ipv4=cs.{198.51.100.42}"
 ```
 
@@ -299,9 +304,9 @@ curl --get 'https://api.threatlandscape.io/rest/v1/stix_bundles' \
 ```bash
 curl --get 'https://api.threatlandscape.io/rest/v1/stix_bundles' \
   -H "apikey: YOUR_THREATLANDSCAPE_API_KEY" \
-  -d "select=bundle_id,victims,threat_actors,sectors,countries_target,latest_ts" \
+  -d "select=bundle_id,victims,threat_actors,sectors,countries_target,stix_latest_at" \
   -d "source_type=eq.darknet" \
-  -d "order=latest_ts.desc" \
+  -d "order=stix_latest_at.desc" \
   -H "Range: 0-49"
 ```
 
@@ -310,10 +315,10 @@ curl --get 'https://api.threatlandscape.io/rest/v1/stix_bundles' \
 ```bash
 curl --get 'https://api.threatlandscape.io/rest/v1/stix_bundles' \
   -H "apikey: YOUR_THREATLANDSCAPE_API_KEY" \
-  -d "select=bundle_id,sectors,threat_actors,malware_names,vulnerabilities,attack_patterns,countries_source,latest_ts" \
+  -d "select=bundle_id,sectors,threat_actors,malware_names,vulnerabilities,attack_patterns,countries_source,stix_latest_at" \
   -d "sectors=cs.{Healthcare}" \
-  -d "latest_ts=gte.2026-03-17T00:00:00Z" \
-  -d "order=latest_ts.desc"
+  -d "stix_latest_at=gte.2026-03-17T00:00:00Z" \
+  -d "order=stix_latest_at.desc"
 ```
 
 ### Country-targeted intelligence feed
@@ -321,9 +326,9 @@ curl --get 'https://api.threatlandscape.io/rest/v1/stix_bundles' \
 ```bash
 curl --get 'https://api.threatlandscape.io/rest/v1/stix_bundles' \
   -H "apikey: YOUR_THREATLANDSCAPE_API_KEY" \
-  -d "select=bundle_id,countries_target,threat_actors,malware_names,sectors,latest_ts" \
+  -d "select=bundle_id,countries_target,threat_actors,malware_names,sectors,stix_latest_at" \
   -d "or=(countries_target.cs.{Germany},countries_target.cs.{Austria},countries_target.cs.{Switzerland})" \
-  -d "order=latest_ts.desc"
+  -d "order=stix_latest_at.desc"
 ```
 
 ### Full STIX bundle download with IOC enrichment
@@ -332,8 +337,8 @@ curl --get 'https://api.threatlandscape.io/rest/v1/stix_bundles' \
 curl --get 'https://api.threatlandscape.io/rest/v1/stix_bundles' \
   -H "apikey: YOUR_THREATLANDSCAPE_API_KEY" \
   -d "select=stix_bundle,indicators_ipv4,indicators_domain,indicators_hash_sha256" \
-  -d "latest_ts=gte.2026-04-01T00:00:00Z" \
-  -d "order=latest_ts.desc" \
+  -d "stix_latest_at=gte.2026-04-01T00:00:00Z" \
+  -d "order=stix_latest_at.desc" \
   -H "Range: 0-99"
 ```
 
