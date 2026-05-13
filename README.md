@@ -22,6 +22,11 @@ The Threat Landscape API delivers continuously updated, machine-readable cyber t
 - [Selecting specific columns](#selecting-specific-columns)
 - [Common Query Recipes](#common-query-recipes)
 - [STIX Bundle Structure](#stix-bundle-structure)
+- [Actionable IOC Feed](#actionable-ioc-feed)
+  - [GET /actionable\_iocs](#get-actionable_iocs)
+  - [IOC Field Reference](#ioc-field-reference)
+  - [Per-Type Active IOC Endpoints](#per-type-active-ioc-endpoints)
+  - [Common IOC Query Recipes](#common-ioc-query-recipes)
 
 ---
 
@@ -539,6 +544,166 @@ The following is a real bundle returned by the API. The `report` object appears 
 
 > **Note:** The full bundle stored in `stix_bundle` contains all objects listed in the `report.object_refs` array. The abbreviated example above omits some `relationship` objects for brevity.
 
+
+# Actionable IOC Feed
+
+> **Base URL:** `https://api.threatlandscape.io/rest/v1`
+
+The Actionable IOC Feed is a second product built on the same API. It provides machine-readable indicators of compromise (IOCs), each backed by a minimal STIX 2.1 indicator object. Where the Intelligence Feed delivers full enriched bundles for analyst consumption, the IOC Feed is designed for operational use cases — SIEM enrichment, EDR integrations, DNS RPZ, and similar workflows.
+
+Authentication is identical to the Intelligence Feed — use the same API key.
+
 ---
 
+## GET /actionable\_iocs
+
+Returns the full IOC history. Each row represents one unique IOC value — deduplicated by `ioc_value` (primary key), so the same indicator is never stored twice regardless of how many source bundles it appears in. Includes both currently active and expired IOCs.
+
+**URL**
+
+```
+GET https://api.threatlandscape.io/rest/v1/actionable_iocs
+```
+
+**Quick example**
+
+```bash
+# 20 most recently added IOCs
+curl 'https://api.threatlandscape.io/rest/v1/actionable_iocs?select=ioc_value,ioc_type,valid_until,created_at&order=seq_id.desc&limit=20' \
+  -H "apikey: YOUR_THREATLANDSCAPE_API_KEY"
+```
+
+---
+
+## IOC Field Reference
+
+| Field             | Type          | Description                                                                                          |
+|-------------------|---------------|------------------------------------------------------------------------------------------------------|
+| `ioc_value`       | `text`        | The raw IOC value (e.g. `203.0.113.42`, `evil.example.com`, a hash). Primary key — unique per value. |
+| `ioc_type`        | `text`        | Type of indicator: `ipv4`, `ipv6`, `domain`, `url`, `hash_md5`, `hash_sha1`, `hash_sha256`.         |
+| `valid_until`     | `timestamptz` | Expiry timestamp from the originating STIX indicator. IOCs past this date are no longer actionable.  |
+| `source_bundle_id`| `text`        | STIX bundle ID of the source bundle this IOC was extracted from.                                     |
+| `stix_bundle`     | `jsonb`       | Minimal STIX 2.1 bundle containing exactly one `indicator` object for this IOC.                      |
+| `created_at`      | `timestamptz` | Timestamp when this row was first inserted.                                                          |
+| `updated_at`      | `timestamptz` | Timestamp of the last upsert (updates when the same IOC reappears in a newer bundle).                |
+| `seq_id`          | `bigint`      | Monotonically increasing sequence number copied from the master data store. Use as a sync watermark. |
+
+---
+
+## Per-Type Active IOC Endpoints
+
+Seven endpoints each return **currently active IOCs of a single type** — only rows where `valid_until > NOW()` are included. Use these when you want an always-current feed for a specific indicator type without any client-side filtering.
+
+| Endpoint | IOC type |
+|---|---|
+| `https://api.threatlandscape.io/rest/v1/iocs_ipv4` | `ipv4` |
+| `https://api.threatlandscape.io/rest/v1/iocs_ipv6` | `ipv6` |
+| `https://api.threatlandscape.io/rest/v1/iocs_domain` | `domain` |
+| `https://api.threatlandscape.io/rest/v1/iocs_url` | `url` |
+| `https://api.threatlandscape.io/rest/v1/iocs_md5` | `hash_md5` |
+| `https://api.threatlandscape.io/rest/v1/iocs_sha1` | `hash_sha1` |
+| `https://api.threatlandscape.io/rest/v1/iocs_sha256` | `hash_sha256` |
+
+Each of these endpoints exposes three columns:
+
+| Column            | Description                                      |
+|-------------------|--------------------------------------------------|
+| `ioc`             | The raw IOC value                                |
+| `source_bundle_id`| Source bundle this indicator came from           |
+| `valid_until`     | Expiry timestamp                                 |
+
+```bash
+# All active malicious domains
+curl 'https://api.threatlandscape.io/rest/v1/iocs_domain?select=ioc,valid_until&order=valid_until.desc' \
+  -H "apikey: YOUR_THREATLANDSCAPE_API_KEY"
+
+# All active malicious IPv4 addresses
+curl 'https://api.threatlandscape.io/rest/v1/iocs_ipv4?select=ioc,valid_until&order=valid_until.desc' \
+  -H "apikey: YOUR_THREATLANDSCAPE_API_KEY"
+```
+
+---
+
+## Common IOC Query Recipes
+
+### All active IOCs of a specific type
+
+```bash
+# Active SHA-256 hashes
+curl 'https://api.threatlandscape.io/rest/v1/iocs_sha256?select=ioc,valid_until,source_bundle_id&order=valid_until.desc' \
+  -H "apikey: YOUR_THREATLANDSCAPE_API_KEY"
+```
+
+### Check if a specific value is an active IOC
+
+```bash
+# Look up a domain
+curl 'https://api.threatlandscape.io/rest/v1/iocs_domain?ioc=eq.evil.example.com' \
+  -H "apikey: YOUR_THREATLANDSCAPE_API_KEY"
+
+# Look up an IP
+curl 'https://api.threatlandscape.io/rest/v1/iocs_ipv4?ioc=eq.203.0.113.42' \
+  -H "apikey: YOUR_THREATLANDSCAPE_API_KEY"
+```
+
+### Query the raw table including expired IOCs
+
+```bash
+# Full history for a specific value
+curl 'https://api.threatlandscape.io/rest/v1/actionable_iocs?ioc_value=eq.evil.example.com&select=ioc_value,ioc_type,valid_until,source_bundle_id,created_at' \
+  -H "apikey: YOUR_THREATLANDSCAPE_API_KEY"
+```
+
+### Incremental sync — new IOCs added since last run
+
+Use `seq_id` as a stable watermark. Save the highest `seq_id` from each run and use it as the starting point for the next.
+
+```bash
+# All rows with seq_id greater than the last seen value
+curl 'https://api.threatlandscape.io/rest/v1/actionable_iocs?seq_id=gt.12345&select=ioc_value,ioc_type,valid_until,seq_id&order=seq_id.asc' \
+  -H "apikey: YOUR_THREATLANDSCAPE_API_KEY"
+```
+
+### Count active IOCs by type
+
+```bash
+curl 'https://api.threatlandscape.io/rest/v1/actionable_iocs?select=ioc_type&valid_until=gt.now()' \
+  -H "apikey: YOUR_THREATLANDSCAPE_API_KEY" \
+  -H "Prefer: count=exact"
+```
+
+### Retrieve the full STIX indicator object for an IOC
+
+Each row in `actionable_iocs` contains a `stix_bundle` field with a minimal STIX 2.1 bundle holding exactly one `indicator` object:
+
+```bash
+curl 'https://api.threatlandscape.io/rest/v1/actionable_iocs?ioc_value=eq.evil.example.com&select=stix_bundle' \
+  -H "apikey: YOUR_THREATLANDSCAPE_API_KEY"
+```
+
+Example `stix_bundle` for a domain IOC:
+
+```json
+{
+  "id": "bundle--b26b2d8c-5e73-4b57-b5a6-f85a9389ca42",
+  "type": "bundle",
+  "spec_version": "2.1",
+  "objects": [
+    {
+      "id": "indicator--3a5e24f3-07b5-487a-a39d-03d28d34e6a2",
+      "type": "indicator",
+      "spec_version": "2.1",
+      "name": "evil.example.com",
+      "pattern": "[domain-name:value = 'evil.example.com']",
+      "pattern_type": "stix",
+      "valid_from": "2026-05-12T09:28:32.000Z",
+      "valid_until": "2026-08-10T09:28:32.000Z",
+      "created": "2026-05-12T09:28:32.000Z",
+      "modified": "2026-05-12T09:28:32.000Z",
+      "created_by_ref": "identity--2f63f8e1-a880-4e9f-89e6-bd86c1d5939e",
+      "object_marking_refs": ["marking-definition--939a9414-2ddd-4d32-a0cd-375ea402b003"]
+    }
+  ]
+}
+```
 *© Threat Landscape — threatlandscape.io. All rights reserved.*
