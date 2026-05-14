@@ -1,28 +1,37 @@
-# Threat Landscape API
+# Threat Landscape REST API
+
+## Two APIs. One Purpose.
+
+Not every use case needs the same data. We built two distinct APIs so analysts and engineers each get exactly what they need — nothing more, nothing less.
+
+| | Intelligence API | IOC API |
+|---|---|---|
+| **For** | Analysts & platforms | Tool integrations |
+| **Data** | Full STIX 2.1 object graph | Indicators only |
+| **Endpoint** | `/rest/v1/stix_bundles` | `/rest/v1/actionable_iocs` |
 
 > **Base URL:** `https://api.threatlandscape.io/rest/v1`
-
-The Threat Landscape API delivers continuously updated, machine-readable cyber threat intelligence as **STIX 2.1 bundles**. Data is collected and enriched from both open-source intelligence (OSINT) and darknet sources, then normalized into structured records that can be queried, filtered, and integrated into any security platform.
 
 ---
 
 ## Contents
 
 - [Authentication](#authentication)
-- [Quick Start](#quick-start)
-- [Endpoint Reference](#endpoint-reference)
-  - [GET /stix\_bundles](#get-stix_bundles)
-- [Field Reference](#field-reference)
-- [Filtering](#filtering)
-  - [Scalar filters](#scalar-filters)
-  - [Array filters](#array-filters)
-  - [Logical operators](#logical-operators)
-- [Pagination](#pagination)
-- [Sorting](#sorting)
-- [Selecting specific columns](#selecting-specific-columns)
-- [Common Query Recipes](#common-query-recipes)
-- [STIX Bundle Structure](#stix-bundle-structure)
-- [Actionable IOC Feed](#actionable-ioc-feed)
+- [Threat Landscape Intelligence API](#threat-landscape-intelligence-api)
+  - [Quick Start](#quick-start)
+  - [Endpoint Reference](#endpoint-reference)
+    - [GET /stix\_bundles](#get-stix_bundles)
+  - [Field Reference](#field-reference)
+  - [Filtering](#filtering)
+    - [Scalar filters](#scalar-filters)
+    - [Array filters](#array-filters)
+    - [Logical operators](#logical-operators)
+  - [Pagination](#pagination)
+  - [Sorting](#sorting)
+  - [Selecting specific columns](#selecting-specific-columns)
+  - [Common Query Recipes](#common-query-recipes)
+  - [STIX Bundle Structure](#stix-bundle-structure)
+- [Threat Landscape IOC API](#threat-landscape-ioc-api)
   - [GET /actionable\_iocs](#get-actionable_iocs)
   - [IOC Field Reference](#ioc-field-reference)
   - [Per-Type Active IOC Endpoints](#per-type-active-ioc-endpoints)
@@ -45,6 +54,12 @@ Alternatively, send it as a Bearer token in the `Authorization` header:
 ```
 
 API keys are issued per account. Keep your key secret — do not include it in client-side code, public repositories, or logs. Contact support to rotate a compromised key.
+
+---
+
+# Threat Landscape Intelligence API
+
+Full-breadth threat intelligence built for analysis, context, and enrichment. Query across the complete STIX 2.1 object graph — threat actors, malware families, campaigns, victims, target sectors, CVEs, TTPs, relationships, and more. Designed for analysts building situational awareness and platforms that need the complete picture.
 
 ---
 
@@ -545,13 +560,13 @@ The following is a real bundle returned by the API. The `report` object appears 
 > **Note:** The full bundle stored in `stix_bundle` contains all objects listed in the `report.object_refs` array. The abbreviated example above omits some `relationship` objects for brevity.
 
 
-# Actionable IOC Feed
+# Threat Landscape IOC API
 
 > **Base URL:** `https://api.threatlandscape.io/rest/v1`
 
-The Actionable IOC Feed is a second product built on the same API. It provides machine-readable indicators of compromise (IOCs), each backed by a minimal STIX 2.1 indicator object. Where the Intelligence Feed delivers full enriched bundles for analyst consumption, the IOC Feed is designed for operational use cases — SIEM enrichment, EDR integrations, DNS RPZ, and similar workflows.
+Lean, fast, and purpose-built for automated indicator ingestion. Delivers only STIX indicator objects — IPv4 addresses, domains, URLs, and file hashes — optimised for direct pipeline consumption. Pipe fresh, high-fidelity IOCs straight into your SIEM, EDR, firewall, or blocklist without wading through rich contextual objects you don't need.
 
-Authentication is identical to the Intelligence Feed — use the same API key.
+Authentication is identical to the Intelligence API — use the same API key.
 
 ---
 
